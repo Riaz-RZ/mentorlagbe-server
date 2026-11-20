@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 const router = Router();
 
@@ -15,8 +16,8 @@ const router = Router();
 // =============================================================
 
 
-router.get('/', (req, res) =>{
-res.send({ message: 'users retrived successfully'})
+router.get('/', (req, res) => {
+  ApiResponse.success(res, { message: 'users retrived successfully' });
 })
 
 

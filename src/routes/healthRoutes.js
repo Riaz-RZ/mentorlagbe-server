@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 const router = Router();
 
@@ -6,12 +7,9 @@ const router = Router();
 // Simple health check - confirms the API is running.
 // Never expose database credentials or other secrets here.
 router.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
+  ApiResponse.success(res, {
     message: 'MentorLagbe API is running',
-    data: {
-      status: 'OK',
-    },
+    data: { status: 'OK' },
   });
 });
 

@@ -21,12 +21,12 @@ app.use(
 app.use(express.json());
 
 // Basic API routes
-app.use('/health', healthRoutes);
+app.use('/api/health', healthRoutes);
 
 // Route modules (mounted now, endpoints added in later phases)
-app.use('/users', userRoutes);
-app.use('/tuitions', tuitionRoutes);
-app.use('/applications', applicationRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/tuitions', tuitionRoutes);
+app.use('/api/applications', applicationRoutes);
 
 // Unknown route -> 404
 app.use(notFound);

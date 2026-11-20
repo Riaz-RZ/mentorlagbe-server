@@ -5,6 +5,12 @@ import { MongoClient } from 'mongodb';
 
 let db = null;
 
+// Collection references - assigned in connectToMongoDB() after the
+// connection succeeds (they are null until then).
+export let usersCollection = null;
+export let tuitionsCollection = null;
+export let applicationsCollection = null;
+
 export async function connectToMongoDB() {
   const uri = process.env.DB_URI;
 
@@ -18,6 +24,11 @@ export async function connectToMongoDB() {
   console.log('You successfully connected to MongoDB!');
 
   db = client.db('mentorlagbe');
+
+  usersCollection = db.collection('users');
+  tuitionsCollection = db.collection('tuitions');
+  applicationsCollection = db.collection('applications');
+
   return db;
 }
 
