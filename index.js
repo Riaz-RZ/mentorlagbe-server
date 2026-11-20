@@ -23,6 +23,11 @@ export async function connectToMongoDB() {
 
 const connectedClient = await connectToMongoDB();
 const db = connectedClient.db('mentorlagbe'); 
+const usersCollections = db.collection('users')
+const tuitionsCollections = db.collection('tuitions')
+const applicationsCollections = db.collection('applications')
+
+
 
 
 app.listen(process.env.PORT || 5000, () => {
