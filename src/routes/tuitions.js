@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ObjectId } from 'mongodb';
 import { tuitionsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -6,16 +7,15 @@ import { ApiError } from '../utils/ApiError.js';
 const router = Router();
 
 // =============================================================
-// Tuitions module — PLANNED endpoints (Phase 2, not implemented yet)
+// Tuitions module
 //
-// POST   /api/tuitions                -> tutor: create a tuition post
-// GET    /api/tuitions                -> public: list approved tuitions
-//                                        (with search/filter query params)
-// GET    /api/tuitions/mine           -> tutor: list own tuitions
-// GET    /api/tuitions/:id            -> public: get one tuition
-// PATCH  /api/tuitions/:id            -> owner tutor: edit
-// PATCH  /api/tuitions/:id/status     -> admin: approve / reject
-// PATCH  /api/tuitions/:id/active     -> owner tutor: toggle isActive
+// POST   /api/tuitions                -> tutor: create a tuition post  ✅
+// GET    /api/tuitions                -> public: list approved tuitions ✅
+// GET    /api/tuitions/mine           -> tutor: list own tuitions       ✅
+// PATCH  /api/tuitions/:id            -> owner tutor: edit              ✅
+// DELETE /api/tuitions/:id            -> owner tutor: delete            ✅
+// GET    /api/tuitions/:id            -> public: get one tuition        ⬜ (Phase 2)
+// PATCH  /api/tuitions/:id/status     -> admin: approve / reject        ⬜ (Phase 2)
 //
 // Ownership rule: tutorEmail in the JWT must match the tuition owner.
 // =============================================================
@@ -78,6 +78,27 @@ router.post('/', async (req, res) => {
   });
 });
 
+// GET /api/tuitions/mine - the logged-in tutor's OWN tuitions (all statuses)
+// TODO(Phase 0): read tutorEmail from the verified JWT instead of the
+// query string - until verifyToken exists this trusts the client.
+router.get('/mine', async (req, res) => {
+  const { tutorEmail } = req.query;
+
+  if (!tutorEmail) {
+    throw new ApiError(400, 'tutorEmail query param is required');
+  }
+
+  const tuitions = await tuitionsCollection
+    .find({ tutorEmail: String(tutorEmail) })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  ApiResponse.success(res, {
+    message: 'tuitions fetched successfully',
+    data: tuitions,
+  });
+});
+
 // GET /api/tuitions - public list: only APPROVED tuitions are visible
 router.get('/', async (req, res) => {
   const tuitions = await tuitionsCollection
@@ -87,6 +108,89 @@ router.get('/', async (req, res) => {
   ApiResponse.success(res, {
     message: 'tuitions fetched successfully',
     data: tuitions,
+  });
+});
+
+// PATCH /api/tuitions/:id - the owner tutor edits their own tuition post
+// TODO(Phase 0): verify the tutor owns this tuition (tutorEmail in JWT)
+// once verifyToken middleware exists - until then this trusts the client.
+router.patch('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  const {
+    title,
+    subject,
+    classLevel,
+    mode,
+    location,
+    monthlyFee,
+    daysPerWeek,
+    bannerImage,
+    description,
+    isActive,
+  } = req.body;
+
+  // Same required fields as POST - the edit form always sends them all.
+  if (!title || !subject || !classLevel || monthlyFee === undefined) {
+    throw new ApiError(
+      400,
+      'title, subject, classLevel and monthlyFee are required'
+    );
+  }
+
+  // Only the fields a tutor may edit. approvalStatus is NEVER touched
+  // here - only an admin can approve/reject a post.
+  const updates = {
+    title,
+    subject,
+    classLevel,
+    mode: mode || 'online',
+    location: location || '',
+    monthlyFee: Number(monthlyFee),
+    daysPerWeek: Number(daysPerWeek) || 0,
+    bannerImage: bannerImage || '',
+    description: description || '',
+    isActive: Boolean(isActive),
+  };
+
+  const result = await tuitionsCollection.findOneAndUpdate(
+    { _id: new ObjectId(id) },
+    { $set: updates },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  ApiResponse.success(res, {
+    message: 'tuition updated successfully',
+    data: result,
+  });
+});
+
+// DELETE /api/tuitions/:id - the owner tutor deletes their tuition post
+// TODO(Phase 0): same ownership check as PATCH (JWT) later.
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  const result = await tuitionsCollection.deleteOne({ _id: new ObjectId(id) });
+
+  if (result.deletedCount === 0) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  ApiResponse.success(res, {
+    message: 'tuition deleted successfully',
+    data: null,
   });
 });
 
