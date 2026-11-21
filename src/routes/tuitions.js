@@ -12,10 +12,11 @@ const router = Router();
 // POST   /api/tuitions                -> tutor: create a tuition post  ✅
 // GET    /api/tuitions                -> public: list approved tuitions ✅
 // GET    /api/tuitions/mine           -> tutor: list own tuitions       ✅
+// GET    /api/tuitions/all            -> admin: list ALL tuitions       ✅
 // PATCH  /api/tuitions/:id            -> owner tutor: edit              ✅
+// PATCH  /api/tuitions/:id/status     -> admin: approve / reject        ✅
 // DELETE /api/tuitions/:id            -> owner tutor: delete            ✅
 // GET    /api/tuitions/:id            -> public: get one tuition        ⬜ (Phase 2)
-// PATCH  /api/tuitions/:id/status     -> admin: approve / reject        ⬜ (Phase 2)
 //
 // Ownership rule: tutorEmail in the JWT must match the tuition owner.
 // =============================================================
@@ -99,6 +100,21 @@ router.get('/mine', async (req, res) => {
   });
 });
 
+// GET /api/tuitions/all - admin: EVERY tuition (all statuses), newest first
+// Used by the admin moderation page for its Pending/Approved/Rejected counts.
+// TODO(Phase 0): add verifyToken + requireRole('admin') here.
+router.get('/all', async (req, res) => {
+  const tuitions = await tuitionsCollection
+    .find({})
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  ApiResponse.success(res, {
+    message: 'tuitions fetched successfully',
+    data: tuitions,
+  });
+});
+
 // GET /api/tuitions - public list: only APPROVED tuitions are visible
 router.get('/', async (req, res) => {
   const tuitions = await tuitionsCollection
@@ -108,6 +124,40 @@ router.get('/', async (req, res) => {
   ApiResponse.success(res, {
     message: 'tuitions fetched successfully',
     data: tuitions,
+  });
+});
+
+// PATCH /api/tuitions/:id/status - admin changes the approval status.
+// Body: { approvalStatus: "pending" | "approved" | "rejected" }
+// Frontend uses it for Approve (approved), Reject (rejected) and
+// Reinstate (rejected -> approved).
+// TODO(Phase 0): requireRole('admin') once the JWT middleware exists.
+router.patch('/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { approvalStatus } = req.body;
+
+  if (!ObjectId.isValid(id)) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  const allowed = ['pending', 'approved', 'rejected'];
+  if (!allowed.includes(approvalStatus)) {
+    throw new ApiError(400, 'approvalStatus must be pending, approved or rejected');
+  }
+
+  const result = await tuitionsCollection.findOneAndUpdate(
+    { _id: new ObjectId(id) },
+    { $set: { approvalStatus } },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  ApiResponse.success(res, {
+    message: `tuition ${approvalStatus} successfully`,
+    data: result,
   });
 });
 
