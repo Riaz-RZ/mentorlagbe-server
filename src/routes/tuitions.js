@@ -115,10 +115,11 @@ router.get('/all', async (req, res) => {
   });
 });
 
-// GET /api/tuitions - public list: only APPROVED tuitions are visible
+// GET /api/tuitions - public list: only APPROVED AND ACTIVE tuitions
+// are visible to students (admin approves first, tutor can close later).
 router.get('/', async (req, res) => {
   const tuitions = await tuitionsCollection
-    .find({ approvalStatus: 'approved' })
+    .find({ approvalStatus: 'approved', isActive: true })
     .toArray();
 
   ApiResponse.success(res, {
