@@ -16,7 +16,7 @@ const router = Router();
 // PATCH  /api/tuitions/:id            -> owner tutor: edit              ✅
 // PATCH  /api/tuitions/:id/status     -> admin: approve / reject        ✅
 // DELETE /api/tuitions/:id            -> owner tutor: delete            ✅
-// GET    /api/tuitions/:id            -> public: get one tuition        ⬜ (Phase 2)
+// GET    /api/tuitions/:id            -> public: get one tuition        ✅
 //
 // Ownership rule: tutorEmail in the JWT must match the tuition owner.
 // =============================================================
@@ -125,6 +125,32 @@ router.get('/', async (req, res) => {
   ApiResponse.success(res, {
     message: 'tuitions fetched successfully',
     data: tuitions,
+  });
+});
+
+// GET /api/tuitions/:id - public: get ONE tuition for the details page.
+// Same rule as the list: students only ever see approved + active posts.
+// NOTE: defined after /mine and /all so those paths are not captured by :id.
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  const tuition = await tuitionsCollection.findOne({
+    _id: new ObjectId(id),
+    approvalStatus: 'approved',
+    isActive: true,
+  });
+
+  if (!tuition) {
+    throw new ApiError(404, 'tuition not found');
+  }
+
+  ApiResponse.success(res, {
+    message: 'tuition fetched successfully',
+    data: tuition,
   });
 });
 
