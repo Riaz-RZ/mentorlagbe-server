@@ -1,8 +1,30 @@
 import { Router } from 'express';
 import { ObjectId } from 'mongodb';
-import { tuitionsCollection } from '../config/db.js';
+import { tuitionsCollection, getDb } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
+
+// Attach each tutor's current plan ("pro" | "free") so the frontend
+// can show the golden PRO badge next to their name.
+async function withTutorPlan(tuitions) {
+  const emails = [
+    ...new Set(tuitions.map((t) => t.tutorEmail).filter(Boolean)),
+  ];
+
+  if (emails.length === 0) return tuitions;
+
+  const users = await getDb()
+    .collection('user')
+    .find({ email: { $in: emails } }, { projection: { email: 1, plan: 1 } })
+    .toArray();
+
+  const planByEmail = new Map(users.map((u) => [u.email, u.plan || 'free']));
+
+  return tuitions.map((t) => ({
+    ...t,
+    tutorPlan: planByEmail.get(t.tutorEmail) || 'free',
+  }));
+}
 
 const router = Router();
 
@@ -97,7 +119,7 @@ router.get('/mine', async (req, res) => {
 
   ApiResponse.success(res, {
     message: 'tuitions fetched successfully',
-    data: tuitions,
+    data: await withTutorPlan(tuitions),
   });
 });
 
@@ -125,7 +147,7 @@ router.get('/', async (req, res) => {
 
   ApiResponse.success(res, {
     message: 'tuitions fetched successfully',
-    data: tuitions,
+    data: await withTutorPlan(tuitions),
   });
 });
 
@@ -141,7 +163,7 @@ router.get('/latest', async (req, res) => {
 
   ApiResponse.success(res, {
     message: 'latest tuitions fetched successfully',
-    data: tuitions,
+    data: await withTutorPlan(tuitions),
   });
 });
 
@@ -165,9 +187,11 @@ router.get('/:id', async (req, res) => {
     throw new ApiError(404, 'tuition not found');
   }
 
+  const [withPlan] = await withTutorPlan([tuition]);
+
   ApiResponse.success(res, {
     message: 'tuition fetched successfully',
-    data: tuition,
+    data: withPlan,
   });
 });
 

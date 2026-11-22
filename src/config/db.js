@@ -33,6 +33,13 @@ export async function connectToMongoDB() {
   savedTuitionsCollection = db.collection('savedTuitions');
   paymentsCollection = db.collection('payments');
 
+  // One payment row per Stripe session: the success page's verify
+  // can fire twice (React StrictMode), and the unique index makes
+  // the insert race-safe.
+  await paymentsCollection
+    .createIndex({ stripeSessionId: 1 }, { unique: true })
+    .catch((err) => console.log('payments index not created:', err.message));
+
   return db;
 }
 
