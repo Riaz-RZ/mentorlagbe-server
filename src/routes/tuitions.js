@@ -11,6 +11,7 @@ const router = Router();
 //
 // POST   /api/tuitions                -> tutor: create a tuition post  ✅
 // GET    /api/tuitions                -> public: list approved tuitions ✅
+// GET    /api/tuitions/latest         -> public: 6 newest approved      ✅
 // GET    /api/tuitions/mine           -> tutor: list own tuitions       ✅
 // GET    /api/tuitions/all            -> admin: list ALL tuitions       ✅
 // PATCH  /api/tuitions/:id            -> owner tutor: edit              ✅
@@ -124,6 +125,22 @@ router.get('/', async (req, res) => {
 
   ApiResponse.success(res, {
     message: 'tuitions fetched successfully',
+    data: tuitions,
+  });
+});
+
+// GET /api/tuitions/latest - public: the 6 newest approved + active
+// tuitions, for the homepage "Featured Tuitions" section.
+// NOTE: must stay ABOVE /:id, otherwise "latest" is treated as an id.
+router.get('/latest', async (req, res) => {
+  const tuitions = await tuitionsCollection
+    .find({ approvalStatus: 'approved', isActive: true })
+    .sort({ createdAt: -1 })
+    .limit(6)
+    .toArray();
+
+  ApiResponse.success(res, {
+    message: 'latest tuitions fetched successfully',
     data: tuitions,
   });
 });
