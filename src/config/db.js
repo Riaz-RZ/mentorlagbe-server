@@ -10,6 +10,7 @@ let db = null;
 export let usersCollection = null;
 export let tuitionsCollection = null;
 export let applicationsCollection = null;
+export let savedTuitionsCollection = null;
 
 export async function connectToMongoDB() {
   const uri = process.env.DB_URI;
@@ -28,6 +29,7 @@ export async function connectToMongoDB() {
   usersCollection = db.collection('users');
   tuitionsCollection = db.collection('tuitions');
   applicationsCollection = db.collection('applications');
+  savedTuitionsCollection = db.collection('savedTuitions');
 
   return db;
 }

@@ -5,6 +5,7 @@ import healthRoutes from './routes/healthRoutes.js';
 import userRoutes from './routes/users.js';
 import tuitionRoutes from './routes/tuitions.js';
 import applicationRoutes from './routes/applications.js';
+import savedRoutes from './routes/saved.js';
 import { notFound } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -27,6 +28,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tuitions', tuitionRoutes);
 app.use('/api/applications', applicationRoutes);
+app.use('/api/saved', savedRoutes);
 
 // Unknown route -> 404
 app.use(notFound);
