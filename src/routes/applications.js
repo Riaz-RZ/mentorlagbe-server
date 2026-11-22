@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ObjectId } from 'mongodb';
 import { applicationsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -10,8 +11,8 @@ const router = Router();
 //
 // POST  /api/applications             -> student: apply to a tuition   ✅
 // GET   /api/applications/mine        -> student: own applications     ✅
-// GET   /api/applications/tuition/:id -> owner tutor: applicants       ⬜ (later)
-// PATCH /api/applications/:id/status  -> owner tutor: accept / reject  ⬜ (later)
+// GET   /api/applications/tutor       -> tutor: applicants for my posts ✅
+// PATCH /api/applications/:id/status  -> tutor: accept / reject        ✅
 //
 // Ownership rules:
 // - students only ever see their own records (studentEmail match)
@@ -94,6 +95,59 @@ router.get('/mine', async (req, res) => {
   ApiResponse.success(res, {
     message: 'applications fetched successfully',
     data: applications,
+  });
+});
+
+// GET /api/applications/tutor?tutorEmail=... - every application sent to
+// MY tuition posts (used by the Manage Applicants page).
+// TODO(Phase 0): tutorEmail must come from the verified JWT.
+router.get('/tutor', async (req, res) => {
+  const { tutorEmail } = req.query;
+
+  if (!tutorEmail) {
+    throw new ApiError(400, 'tutorEmail query param is required');
+  }
+
+  const applications = await applicationsCollection
+    .find({ tutorEmail })
+    .sort({ appliedAt: -1 })
+    .toArray();
+
+  ApiResponse.success(res, {
+    message: 'applications fetched successfully',
+    data: applications,
+  });
+});
+
+// PATCH /api/applications/:id/status - tutor accepts or rejects one
+// application. The student sees the new status on My Applications.
+// TODO(Phase 0): check the JWT tutorEmail matches application.tutorEmail.
+router.patch('/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!ObjectId.isValid(id)) {
+    throw new ApiError(404, 'application not found');
+  }
+
+  const allowed = ['accepted', 'rejected'];
+  if (!allowed.includes(status)) {
+    throw new ApiError(400, "status must be accepted or rejected");
+  }
+
+  const result = await applicationsCollection.findOneAndUpdate(
+    { _id: new ObjectId(id) },
+    { $set: { status } },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) {
+    throw new ApiError(404, 'application not found');
+  }
+
+  ApiResponse.success(res, {
+    message: `application ${status} successfully`,
+    data: result,
   });
 });
 
