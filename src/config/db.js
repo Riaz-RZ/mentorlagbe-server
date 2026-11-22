@@ -11,6 +11,7 @@ export let usersCollection = null;
 export let tuitionsCollection = null;
 export let applicationsCollection = null;
 export let savedTuitionsCollection = null;
+export let paymentsCollection = null;
 
 export async function connectToMongoDB() {
   const uri = process.env.DB_URI;
@@ -30,6 +31,7 @@ export async function connectToMongoDB() {
   tuitionsCollection = db.collection('tuitions');
   applicationsCollection = db.collection('applications');
   savedTuitionsCollection = db.collection('savedTuitions');
+  paymentsCollection = db.collection('payments');
 
   return db;
 }
