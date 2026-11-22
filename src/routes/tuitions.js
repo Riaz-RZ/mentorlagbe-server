@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { tuitionsCollection, getDb } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
+import { getPlan } from '../utils/plan.js';
 
 // Attach each tutor's current plan ("pro" | "free") so the frontend
 // can show the golden PRO badge next to their name.
@@ -68,6 +69,18 @@ router.post('/', async (req, res) => {
       400,
       'title, subject, classLevel and monthlyFee are required'
     );
+  }
+
+  // Plan limit: free tutors can post up to 2 tuitions (pro = unlimited).
+  if (tutorEmail && (await getPlan(tutorEmail)) !== 'pro') {
+    const count = await tuitionsCollection.countDocuments({ tutorEmail });
+
+    if (count >= 2) {
+      throw new ApiError(
+        403,
+        'Free plan allows up to 2 tuition posts. Upgrade to Pro for unlimited posts!'
+      );
+    }
   }
 
   const tuition = {

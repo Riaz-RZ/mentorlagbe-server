@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { applicationsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
+import { getPlan } from '../utils/plan.js';
 
 const router = Router();
 
@@ -52,6 +53,18 @@ router.post('/', async (req, res) => {
 
   if (existing) {
     throw new ApiError(400, 'You have already applied for this tuition');
+  }
+
+  // Plan limit: free students can apply to up to 5 tuitions (pro = unlimited).
+  if ((await getPlan(studentEmail)) !== 'pro') {
+    const count = await applicationsCollection.countDocuments({ studentEmail });
+
+    if (count >= 5) {
+      throw new ApiError(
+        403,
+        'Free plan allows up to 5 applications. Upgrade to Pro for unlimited applications!'
+      );
+    }
   }
 
   const application = {
