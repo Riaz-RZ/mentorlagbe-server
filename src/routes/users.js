@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { ApiResponse } from '../utils/ApiResponse.js';
+import { getDb } from '../config/db.js';
 
 const router = Router();
 
@@ -15,6 +16,45 @@ const router = Router();
 // All endpoints will require verifyToken + requireRole middleware.
 // =============================================================
 
+// TODO(Phase 0): public until verifyToken exists — no JWT check yet.
+// Dashboard overview numbers for the admin page.
+router.get('/stats', async (req, res, next) => {
+  try {
+    const db = getDb();
+
+    // Better Auth stores accounts in the "user" collection (singular).
+    const authUsers = db.collection('user');
+
+    const [totalUsers, totalTutors, totalStudents, pendingTuitions, paid] =
+      await Promise.all([
+        authUsers.countDocuments(),
+        authUsers.countDocuments({ role: 'tutor' }),
+        authUsers.countDocuments({ role: 'student' }),
+        db.collection('tuitions').countDocuments({ approvalStatus: 'pending' }),
+        // payments collection does not exist until Phase 5 -> sums to 0.
+        db
+          .collection('payments')
+          .aggregate([
+            { $match: { paymentStatus: 'paid' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+          ])
+          .toArray(),
+      ]);
+
+    ApiResponse.success(res, {
+      message: 'admin stats retrived successfully',
+      data: {
+        totalUsers,
+        totalTutors,
+        totalStudents,
+        pendingTuitions,
+        totalRevenue: paid[0]?.total ?? 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/', (req, res) => {
   ApiResponse.success(res, { message: 'users retrived successfully' });
