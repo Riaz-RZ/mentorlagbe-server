@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { ObjectId } from 'mongodb';
-import { applicationsCollection } from '../config/db.js';
+import { applicationsCollection, tuitionsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getPlan } from '../utils/plan.js';
+import { verifyToken } from '../middleware/verifyToken.js';
+import { requireRole } from '../middleware/requireRole.js';
 
 const router = Router();
 
@@ -20,29 +22,33 @@ const router = Router();
 // - tutors only ever see applications for their own tuitions (tutorEmail match)
 // =============================================================
 
-// POST /api/applications - student applies to a tuition.
-// A new application always starts as "pending".
-// TODO(Phase 0): verify the JWT and take studentEmail from req.user,
-// not from the body (same temporary trust as POST /api/tuitions).
-router.post('/', async (req, res) => {
+// POST /api/applications - student applies to an approved tuition.
+// Identity and tuition snapshots are taken from trusted server data.
+router.post('/', verifyToken, requireRole('student'), async (req, res) => {
   const {
     tuitionId,
-    tuitionTitle,
-    subject,
-    monthlyFee,
-    tutorEmail,
-    studentName,
-    studentEmail,
     studentPhone,
     preferredSchedule,
     studentNote,
   } = req.body;
+  const { email: studentEmail, name: studentName } = req.user;
 
-  if (!tuitionId || !studentEmail || !studentPhone) {
-    throw new ApiError(
-      400,
-      'tuitionId, studentEmail and studentPhone are required'
-    );
+  if (
+    typeof tuitionId !== 'string' ||
+    !ObjectId.isValid(tuitionId) ||
+    !studentPhone
+  ) {
+    throw new ApiError(400, 'A valid tuitionId and studentPhone are required');
+  }
+
+  const tuition = await tuitionsCollection.findOne({
+    _id: new ObjectId(tuitionId),
+    approvalStatus: 'approved',
+    isActive: true,
+  });
+
+  if (!tuition) {
+    throw new ApiError(404, 'tuition not found');
   }
 
   // One student can apply to the same tuition only once.
@@ -69,11 +75,11 @@ router.post('/', async (req, res) => {
 
   const application = {
     tuitionId,
-    tuitionTitle: tuitionTitle || '',
-    subject: subject || '',
-    monthlyFee: monthlyFee ?? 0,
-    tutorEmail: tutorEmail || '',
-    studentName: studentName || '',
+    tuitionTitle: tuition.title,
+    subject: tuition.subject,
+    monthlyFee: tuition.monthlyFee,
+    tutorEmail: tuition.tutorEmail,
+    studentName,
     studentEmail,
     studentPhone,
     preferredSchedule: preferredSchedule || '',
@@ -91,17 +97,10 @@ router.post('/', async (req, res) => {
   });
 });
 
-// GET /api/applications/mine?studentEmail=... - own applications ONLY.
-// TODO(Phase 0): studentEmail must come from the verified JWT.
-router.get('/mine', async (req, res) => {
-  const { studentEmail } = req.query;
-
-  if (!studentEmail) {
-    throw new ApiError(400, 'studentEmail query param is required');
-  }
-
+// GET /api/applications/mine - the logged-in student's own applications.
+router.get('/mine', verifyToken, requireRole('student'), async (req, res) => {
   const applications = await applicationsCollection
-    .find({ studentEmail })
+    .find({ studentEmail: req.user.email })
     .sort({ appliedAt: -1 })
     .toArray();
 
@@ -111,18 +110,29 @@ router.get('/mine', async (req, res) => {
   });
 });
 
-// GET /api/applications/tutor?tutorEmail=... - every application sent to
-// MY tuition posts (used by the Manage Applicants page).
-// TODO(Phase 0): tutorEmail must come from the verified JWT.
-router.get('/tutor', async (req, res) => {
-  const { tutorEmail } = req.query;
+// GET /api/applications/tutor - applications for the tutor's own tuition posts.
+router.get('/tutor', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
+  let filter = {};
 
-  if (!tutorEmail) {
-    throw new ApiError(400, 'tutorEmail query param is required');
+  if (req.user.role === 'tutor') {
+    const tuitions = await tuitionsCollection
+      .find({ tutorEmail: req.user.email }, { projection: { _id: 1 } })
+      .toArray();
+    const tuitionIds = tuitions.map((tuition) => String(tuition._id));
+
+    if (tuitionIds.length === 0) {
+      ApiResponse.success(res, {
+        message: 'applications fetched successfully',
+        data: [],
+      });
+      return;
+    }
+
+    filter = { tuitionId: { $in: tuitionIds } };
   }
 
   const applications = await applicationsCollection
-    .find({ tutorEmail })
+    .find(filter)
     .sort({ appliedAt: -1 })
     .toArray();
 
@@ -134,8 +144,7 @@ router.get('/tutor', async (req, res) => {
 
 // PATCH /api/applications/:id/status - tutor accepts or rejects one
 // application. The student sees the new status on My Applications.
-// TODO(Phase 0): check the JWT tutorEmail matches application.tutorEmail.
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -145,7 +154,30 @@ router.patch('/:id/status', async (req, res) => {
 
   const allowed = ['accepted', 'rejected'];
   if (!allowed.includes(status)) {
-    throw new ApiError(400, "status must be accepted or rejected");
+    throw new ApiError(400, 'status must be accepted or rejected');
+  }
+
+  const application = await applicationsCollection.findOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!application) {
+    throw new ApiError(404, 'application not found');
+  }
+
+  if (req.user.role === 'tutor') {
+    if (!ObjectId.isValid(application.tuitionId)) {
+      throw new ApiError(404, 'application not found');
+    }
+
+    const ownedTuition = await tuitionsCollection.findOne({
+      _id: new ObjectId(application.tuitionId),
+      tutorEmail: req.user.email,
+    });
+
+    if (!ownedTuition) {
+      throw new ApiError(404, 'application not found');
+    }
   }
 
   const result = await applicationsCollection.findOneAndUpdate(

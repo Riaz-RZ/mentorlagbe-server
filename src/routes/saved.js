@@ -4,6 +4,8 @@ import { savedTuitionsCollection, tuitionsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getPlan } from '../utils/plan.js';
+import { verifyToken } from '../middleware/verifyToken.js';
+import { requireRole } from '../middleware/requireRole.js';
 
 const router = Router();
 
@@ -15,19 +17,12 @@ const router = Router();
 // DELETE /api/saved  -> student: remove a saved tuition
 // =============================================================
 
-// GET /api/saved?studentEmail=... - full tuition docs I bookmarked.
+// GET /api/saved - full tuition docs I bookmarked.
 // Only approved + active tuitions come back (same rule as the public
 // marketplace, so a closed/rejected post disappears from the list).
-// TODO(Phase 0): studentEmail must come from the verified JWT.
-router.get('/', async (req, res) => {
-  const { studentEmail } = req.query;
-
-  if (!studentEmail) {
-    throw new ApiError(400, 'studentEmail query param is required');
-  }
-
+router.get('/', verifyToken, requireRole('student'), async (req, res) => {
   const savedDocs = await savedTuitionsCollection
-    .find({ studentEmail })
+    .find({ studentEmail: req.user.email })
     .sort({ savedAt: -1 })
     .toArray();
 
@@ -65,11 +60,22 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/saved - bookmark a tuition (one per student).
-router.post('/', async (req, res) => {
-  const { tuitionId, studentEmail } = req.body;
+router.post('/', verifyToken, requireRole('student'), async (req, res) => {
+  const { tuitionId } = req.body;
+  const { email: studentEmail } = req.user;
 
-  if (!tuitionId || !studentEmail) {
-    throw new ApiError(400, 'tuitionId and studentEmail are required');
+  if (typeof tuitionId !== 'string' || !ObjectId.isValid(tuitionId)) {
+    throw new ApiError(400, 'A valid tuitionId is required');
+  }
+
+  const tuition = await tuitionsCollection.findOne({
+    _id: new ObjectId(tuitionId),
+    approvalStatus: 'approved',
+    isActive: true,
+  });
+
+  if (!tuition) {
+    throw new ApiError(404, 'tuition not found');
   }
 
   const existing = await savedTuitionsCollection.findOne({
@@ -108,12 +114,13 @@ router.post('/', async (req, res) => {
   });
 });
 
-// DELETE /api/saved?tuitionId=...&studentEmail=... - unsave.
-router.delete('/', async (req, res) => {
-  const { tuitionId, studentEmail } = req.query;
+// DELETE /api/saved?tuitionId=... - unsave.
+router.delete('/', verifyToken, requireRole('student'), async (req, res) => {
+  const { tuitionId } = req.query;
+  const { email: studentEmail } = req.user;
 
-  if (!tuitionId || !studentEmail) {
-    throw new ApiError(400, 'tuitionId and studentEmail are required');
+  if (!tuitionId || typeof tuitionId !== 'string') {
+    throw new ApiError(400, 'tuitionId is required');
   }
 
   await savedTuitionsCollection.deleteOne({ tuitionId, studentEmail });

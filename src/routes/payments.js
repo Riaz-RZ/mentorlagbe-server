@@ -3,6 +3,8 @@ import Stripe from 'stripe';
 import { getDb, paymentsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
+import { verifyToken } from '../middleware/verifyToken.js';
+import { requireRole } from '../middleware/requireRole.js';
 
 const router = Router();
 
@@ -33,8 +35,7 @@ function getStripe() {
 
 // GET /api/payments - admin: full payment log, newest first.
 // Empty until the webhook starts writing to `payments`.
-// TODO(Phase 0): admin check via requireRole once verifyToken exists.
-router.get('/', async (req, res) => {
+router.get('/', verifyToken, requireRole('admin'), async (req, res) => {
   const payments = await paymentsCollection
     .find()
     .sort({ paidAt: -1 })
@@ -48,18 +49,8 @@ router.get('/', async (req, res) => {
 
 // POST /api/payments/checkout - create a Stripe Checkout session and
 // hand its hosted URL to the frontend (window.location.href = url).
-// TODO(Phase 0): userEmail/userRole must come from the verified JWT.
-router.post('/checkout', async (req, res) => {
-  const { userEmail, userRole } = req.body;
-
-  if (!userEmail || !userRole) {
-    throw new ApiError(400, 'userEmail and userRole are required');
-  }
-
-  // Only students and tutors can upgrade (admins are managed in the DB).
-  if (userRole !== 'student' && userRole !== 'tutor') {
-    throw new ApiError(403, 'Only students and tutors can upgrade to Pro');
-  }
+router.post('/checkout', verifyToken, requireRole('student', 'tutor'), async (req, res) => {
+  const { email: userEmail, role: userRole } = req.user;
 
   const amount = PRO_PRICE[userRole];
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
@@ -188,7 +179,8 @@ async function recordPayment(session) {
 // GET /api/payments/status?sessionId=... - READ-ONLY check of the
 // `payments` collection (the webhook above writes it). The success page
 // polls this until the webhook lands. No Stripe call, no writes here,
-// so it can never create or change anything.
+// so it can never create or change anything. This deliberately returns
+// only a boolean and remains public for the checkout return page.
 router.get('/status', async (req, res) => {
   const { sessionId } = req.query;
 

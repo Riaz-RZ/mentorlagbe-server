@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { getDb } from '../config/db.js';
+import { verifyToken } from '../middleware/verifyToken.js';
+import { requireRole } from '../middleware/requireRole.js';
 
 const router = Router();
 
@@ -16,9 +18,8 @@ const router = Router();
 // All endpoints will require verifyToken + requireRole middleware.
 // =============================================================
 
-// TODO(Phase 0): public until verifyToken exists — no JWT check yet.
 // Dashboard overview numbers for the admin page.
-router.get('/stats', async (req, res, next) => {
+router.get('/stats', verifyToken, requireRole('admin'), async (req, res, next) => {
   try {
     const db = getDb();
 
@@ -56,7 +57,7 @@ router.get('/stats', async (req, res, next) => {
   }
 });
 
-router.get('/', (req, res) => {
+router.get('/', verifyToken, requireRole('admin'), (req, res) => {
   ApiResponse.success(res, { message: 'users retrived successfully' });
 })
 

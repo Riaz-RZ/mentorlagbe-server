@@ -4,6 +4,8 @@ import { tuitionsCollection, getDb } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getPlan } from '../utils/plan.js';
+import { verifyToken } from '../middleware/verifyToken.js';
+import { requireRole } from '../middleware/requireRole.js';
 
 // Attach each tutor's current plan ("pro" | "free") so the frontend
 // can show the golden PRO badge next to their name.
@@ -48,7 +50,7 @@ const router = Router();
 // POST /api/tuitions - create a tuition post
 // NOTE: async errors are automatically forwarded to the global error
 // handler by Express 5, so `throw new ApiError(...)` works here.
-router.post('/', async (req, res) => {
+router.post('/', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
   const {
     title,
     subject,
@@ -59,9 +61,8 @@ router.post('/', async (req, res) => {
     daysPerWeek,
     bannerImage,
     description,
-    tutorName,
-    tutorEmail,
   } = req.body;
+  const { email: tutorEmail, name: tutorName, role } = req.user;
 
   // Basic input validation
   if (!title || !subject || !classLevel || monthlyFee === undefined) {
@@ -72,7 +73,7 @@ router.post('/', async (req, res) => {
   }
 
   // Plan limit: free tutors can post up to 2 tuitions (pro = unlimited).
-  if (tutorEmail && (await getPlan(tutorEmail)) !== 'pro') {
+  if (role === 'tutor' && (await getPlan(tutorEmail)) !== 'pro') {
     const count = await tuitionsCollection.countDocuments({ tutorEmail });
 
     if (count >= 2) {
@@ -94,10 +95,8 @@ router.post('/', async (req, res) => {
     bannerImage: bannerImage || '',
     description: description || '',
 
-    // TODO(Phase 0): replace with values from the verified JWT once
-    // verifyToken middleware exists - never trust these from the client.
-    tutorName: tutorName || '',
-    tutorEmail: tutorEmail || '',
+    tutorName,
+    tutorEmail,
 
     // These are decided by the SERVER only - never taken from req.body,
     // so a client cannot post something that is already "approved".
@@ -116,17 +115,9 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/tuitions/mine - the logged-in tutor's OWN tuitions (all statuses)
-// TODO(Phase 0): read tutorEmail from the verified JWT instead of the
-// query string - until verifyToken exists this trusts the client.
-router.get('/mine', async (req, res) => {
-  const { tutorEmail } = req.query;
-
-  if (!tutorEmail) {
-    throw new ApiError(400, 'tutorEmail query param is required');
-  }
-
+router.get('/mine', verifyToken, requireRole('tutor'), async (req, res) => {
   const tuitions = await tuitionsCollection
-    .find({ tutorEmail: String(tutorEmail) })
+    .find({ tutorEmail: req.user.email })
     .sort({ createdAt: -1 })
     .toArray();
 
@@ -138,8 +129,7 @@ router.get('/mine', async (req, res) => {
 
 // GET /api/tuitions/all - admin: EVERY tuition (all statuses), newest first
 // Used by the admin moderation page for its Pending/Approved/Rejected counts.
-// TODO(Phase 0): add verifyToken + requireRole('admin') here.
-router.get('/all', async (req, res) => {
+router.get('/all', verifyToken, requireRole('admin'), async (req, res) => {
   const tuitions = await tuitionsCollection
     .find({})
     .sort({ createdAt: -1 })
@@ -212,8 +202,7 @@ router.get('/:id', async (req, res) => {
 // Body: { approvalStatus: "pending" | "approved" | "rejected" }
 // Frontend uses it for Approve (approved), Reject (rejected) and
 // Reinstate (rejected -> approved).
-// TODO(Phase 0): requireRole('admin') once the JWT middleware exists.
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', verifyToken, requireRole('admin'), async (req, res) => {
   const { id } = req.params;
   const { approvalStatus } = req.body;
 
@@ -243,9 +232,7 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 // PATCH /api/tuitions/:id - the owner tutor edits their own tuition post
-// TODO(Phase 0): verify the tutor owns this tuition (tutorEmail in JWT)
-// once verifyToken middleware exists - until then this trusts the client.
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {
@@ -288,8 +275,13 @@ router.patch('/:id', async (req, res) => {
     isActive: Boolean(isActive),
   };
 
+  const filter = { _id: new ObjectId(id) };
+  if (req.user.role !== 'admin') {
+    filter.tutorEmail = req.user.email;
+  }
+
   const result = await tuitionsCollection.findOneAndUpdate(
-    { _id: new ObjectId(id) },
+    filter,
     { $set: updates },
     { returnDocument: 'after' }
   );
@@ -305,15 +297,19 @@ router.patch('/:id', async (req, res) => {
 });
 
 // DELETE /api/tuitions/:id - the owner tutor deletes their tuition post
-// TODO(Phase 0): same ownership check as PATCH (JWT) later.
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {
     throw new ApiError(404, 'tuition not found');
   }
 
-  const result = await tuitionsCollection.deleteOne({ _id: new ObjectId(id) });
+  const filter = { _id: new ObjectId(id) };
+  if (req.user.role !== 'admin') {
+    filter.tutorEmail = req.user.email;
+  }
+
+  const result = await tuitionsCollection.deleteOne(filter);
 
   if (result.deletedCount === 0) {
     throw new ApiError(404, 'tuition not found');
