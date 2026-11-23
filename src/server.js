@@ -16,6 +16,14 @@ function validateEnv() {
 
 validateEnv();
 
+// Stripe webhook is required for Pro upgrades - warn (not exit) so the
+// rest of the API still works while the key is being set up.
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  console.warn(
+    'Warning: STRIPE_WEBHOOK_SECRET is missing - Stripe webhook deliveries will be rejected (Pro upgrades will not complete).'
+  );
+}
+
 // Start the server only after MongoDB connects successfully.
 try {
   await connectToMongoDB();

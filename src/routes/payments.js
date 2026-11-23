@@ -11,7 +11,9 @@ const router = Router();
 //
 // GET  /api/payments          -> admin: every Stripe payment
 // POST /api/payments/checkout -> student/tutor: Stripe checkout URL
-// GET  /api/payments/verify   -> after redirect: record payment + plan
+// POST /api/payments/webhook  -> Stripe: record payment + flip plan
+//                                 (raw body, signature-verified)
+// GET  /api/payments/status   -> success page: is it recorded yet?
 // =============================================================
 
 // Price (one-time USD) per role - matches the pricing section.
@@ -30,7 +32,7 @@ function getStripe() {
 }
 
 // GET /api/payments - admin: full payment log, newest first.
-// Empty until the verify endpoint starts writing to `payments`.
+// Empty until the webhook starts writing to `payments`.
 // TODO(Phase 0): admin check via requireRole once verifyToken exists.
 router.get('/', async (req, res) => {
   const payments = await paymentsCollection
@@ -80,7 +82,7 @@ router.post('/checkout', async (req, res) => {
         },
       },
     ],
-    // Read back by /verify - the only trusted source of these values.
+    // Read back by the webhook - the only trusted source of these values.
     metadata: { userEmail, userRole },
     success_url: `${clientUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${clientUrl}/?payment=cancelled`,
@@ -92,30 +94,53 @@ router.post('/checkout', async (req, res) => {
   });
 });
 
-// GET /api/payments/verify?sessionId=... - called by the success page.
-// Confirms payment WITH Stripe, then records it and flips plan -> pro.
-// Idempotent: re-visiting the page never inserts a second payment.
-// TODO(Phase 0): verify the JWT so only the payer can verify.
-router.get('/verify', async (req, res) => {
-  const { sessionId } = req.query;
-
-  if (!sessionId || typeof sessionId !== 'string') {
-    throw new ApiError(400, 'sessionId query param is required');
+// -------------------------------------------------------------
+// Stripe webhook - THE source of truth for completed payments.
+//
+// Mounted in app.js with express.raw() BEFORE express.json(),
+// because signature verification needs the raw request body.
+// Stripe retries on non-2xx, so failures here are safe to retry.
+// -------------------------------------------------------------
+export async function stripeWebhook(req, res) {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new ApiError(
+      500,
+      'STRIPE_WEBHOOK_SECRET is missing. Add it to .env and restart the server.'
+    );
   }
 
   const stripe = getStripe();
 
-  let session;
+  // Verifies the stripe-signature header against the raw body.
+  let event;
   try {
-    session = await stripe.checkout.sessions.retrieve(sessionId);
+    event = stripe.webhooks.constructEvent(
+      req.body, // Buffer, set by express.raw()
+      req.headers['stripe-signature'],
+      secret
+    );
   } catch {
-    throw new ApiError(400, 'Invalid checkout session');
+    throw new ApiError(400, 'Invalid webhook signature');
   }
 
-  if (session.payment_status !== 'paid') {
-    throw new ApiError(400, 'Payment not completed');
+  // Only fully-paid completed checkouts are recorded; every other event
+  // type is acknowledged with 200 and ignored (Stripe stops retrying it).
+  const session =
+    event.type === 'checkout.session.completed' ? event.data.object : null;
+
+  if (session && session.payment_status === 'paid') {
+    await recordPayment(session);
   }
 
+  res.status(200).json({ received: true });
+}
+
+// Writes one payment row and flips the payer's plan to "pro".
+// Idempotent: the unique index on stripeSessionId makes Stripe's
+// retries (and any double delivery) no-ops after the first write.
+async function recordPayment(session) {
+  const sessionId = session.id;
   const userEmail =
     session.metadata?.userEmail || session.customer_details?.email || '';
   const userRole = session.metadata?.userRole || '';
@@ -124,8 +149,6 @@ router.get('/verify', async (req, res) => {
     ? await getDb().collection('user').findOne({ email: userEmail })
     : null;
 
-  // Upsert keyed on stripeSessionId: the success page can fire twice
-  // (React StrictMode), and the unique index makes this race-safe.
   try {
     await paymentsCollection.updateOne(
       { stripeSessionId: sessionId },
@@ -150,20 +173,36 @@ router.get('/verify', async (req, res) => {
       { upsert: true }
     );
   } catch (error) {
-    // 11000 = duplicate key: the other verify request won the race.
+    // 11000 = duplicate key: a previous delivery already recorded it.
     if (error?.code !== 11000) throw error;
   }
 
-  // Flip the user to Pro (idempotent - safe on every visit).
+  // Flip the user to Pro (idempotent - safe on every delivery).
   if (userEmail) {
     await getDb()
       .collection('user')
       .updateOne({ email: userEmail }, { $set: { plan: 'pro' } });
   }
+}
+
+// GET /api/payments/status?sessionId=... - READ-ONLY check of the
+// `payments` collection (the webhook above writes it). The success page
+// polls this until the webhook lands. No Stripe call, no writes here,
+// so it can never create or change anything.
+router.get('/status', async (req, res) => {
+  const { sessionId } = req.query;
+
+  if (!sessionId || typeof sessionId !== 'string') {
+    throw new ApiError(400, 'sessionId query param is required');
+  }
+
+  const payment = await paymentsCollection.findOne({
+    stripeSessionId: sessionId,
+  });
 
   ApiResponse.success(res, {
-    message: 'payment verified successfully',
-    data: { userEmail, userRole },
+    message: payment ? 'payment recorded' : 'payment still processing',
+    data: { recorded: Boolean(payment) },
   });
 });
 

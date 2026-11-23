@@ -6,7 +6,7 @@ import userRoutes from './routes/users.js';
 import tuitionRoutes from './routes/tuitions.js';
 import applicationRoutes from './routes/applications.js';
 import savedRoutes from './routes/saved.js';
-import paymentRoutes from './routes/payments.js';
+import paymentRoutes, { stripeWebhook } from './routes/payments.js';
 import { notFound } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -17,6 +17,14 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL || 'http://localhost:3000',
   })
+);
+
+// Stripe webhook - MUST be registered before express.json() because
+// signature verification needs the RAW request body (Buffer).
+app.post(
+  '/api/payments/webhook',
+  express.raw({ type: 'application/json' }),
+  stripeWebhook
 );
 
 // Parse JSON request bodies
