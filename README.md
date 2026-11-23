@@ -270,6 +270,16 @@ All API responses follow this structure:
 | POST | `/api/saved` | Student |
 | DELETE | `/api/saved` | Student |
 
+
+## NPM Packages
+
+- express
+- mongodb
+- better-auth
+- jose
+- stripe
+- dotenv
+
 ### Users
 
 | Method | Endpoint | Access |
