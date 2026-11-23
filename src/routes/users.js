@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { getDb } from '../config/db.js';
+import { ensureDatabase } from '../middleware/ensureDatabase.js';
 import { verifyToken } from '../middleware/verifyToken.js';
 import { requireRole } from '../middleware/requireRole.js';
 
@@ -19,7 +20,7 @@ const router = Router();
 // =============================================================
 
 // Dashboard overview numbers for the admin page.
-router.get('/stats', verifyToken, requireRole('admin'), async (req, res, next) => {
+router.get('/stats', verifyToken, requireRole('admin'), ensureDatabase, async (req, res, next) => {
   try {
     const db = getDb();
 
@@ -57,7 +58,7 @@ router.get('/stats', verifyToken, requireRole('admin'), async (req, res, next) =
   }
 });
 
-router.get('/', verifyToken, requireRole('admin'), (req, res) => {
+router.get('/', verifyToken, requireRole('admin'), ensureDatabase, (req, res) => {
   ApiResponse.success(res, { message: 'users retrived successfully' });
 })
 

@@ -4,6 +4,7 @@ import { savedTuitionsCollection, tuitionsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getPlan } from '../utils/plan.js';
+import { ensureDatabase } from '../middleware/ensureDatabase.js';
 import { verifyToken } from '../middleware/verifyToken.js';
 import { requireRole } from '../middleware/requireRole.js';
 
@@ -20,7 +21,7 @@ const router = Router();
 // GET /api/saved - full tuition docs I bookmarked.
 // Only approved + active tuitions come back (same rule as the public
 // marketplace, so a closed/rejected post disappears from the list).
-router.get('/', verifyToken, requireRole('student'), async (req, res) => {
+router.get('/', verifyToken, requireRole('student'), ensureDatabase, async (req, res) => {
   const savedDocs = await savedTuitionsCollection
     .find({ studentEmail: req.user.email })
     .sort({ savedAt: -1 })
@@ -60,7 +61,7 @@ router.get('/', verifyToken, requireRole('student'), async (req, res) => {
 });
 
 // POST /api/saved - bookmark a tuition (one per student).
-router.post('/', verifyToken, requireRole('student'), async (req, res) => {
+router.post('/', verifyToken, requireRole('student'), ensureDatabase, async (req, res) => {
   const { tuitionId } = req.body;
   const { email: studentEmail } = req.user;
 
@@ -115,7 +116,7 @@ router.post('/', verifyToken, requireRole('student'), async (req, res) => {
 });
 
 // DELETE /api/saved?tuitionId=... - unsave.
-router.delete('/', verifyToken, requireRole('student'), async (req, res) => {
+router.delete('/', verifyToken, requireRole('student'), ensureDatabase, async (req, res) => {
   const { tuitionId } = req.query;
   const { email: studentEmail } = req.user;
 

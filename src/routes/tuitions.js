@@ -4,6 +4,7 @@ import { tuitionsCollection, getDb } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getPlan } from '../utils/plan.js';
+import { ensureDatabase } from '../middleware/ensureDatabase.js';
 import { verifyToken } from '../middleware/verifyToken.js';
 import { requireRole } from '../middleware/requireRole.js';
 
@@ -50,7 +51,7 @@ const router = Router();
 // POST /api/tuitions - create a tuition post
 // NOTE: async errors are automatically forwarded to the global error
 // handler by Express 5, so `throw new ApiError(...)` works here.
-router.post('/', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
+router.post('/', verifyToken, requireRole('tutor', 'admin'), ensureDatabase, async (req, res) => {
   const {
     title,
     subject,
@@ -115,7 +116,7 @@ router.post('/', verifyToken, requireRole('tutor', 'admin'), async (req, res) =>
 });
 
 // GET /api/tuitions/mine - the logged-in tutor's OWN tuitions (all statuses)
-router.get('/mine', verifyToken, requireRole('tutor'), async (req, res) => {
+router.get('/mine', verifyToken, requireRole('tutor'), ensureDatabase, async (req, res) => {
   const tuitions = await tuitionsCollection
     .find({ tutorEmail: req.user.email })
     .sort({ createdAt: -1 })
@@ -129,7 +130,7 @@ router.get('/mine', verifyToken, requireRole('tutor'), async (req, res) => {
 
 // GET /api/tuitions/all - admin: EVERY tuition (all statuses), newest first
 // Used by the admin moderation page for its Pending/Approved/Rejected counts.
-router.get('/all', verifyToken, requireRole('admin'), async (req, res) => {
+router.get('/all', verifyToken, requireRole('admin'), ensureDatabase, async (req, res) => {
   const tuitions = await tuitionsCollection
     .find({})
     .sort({ createdAt: -1 })
@@ -143,7 +144,7 @@ router.get('/all', verifyToken, requireRole('admin'), async (req, res) => {
 
 // GET /api/tuitions - public list: only APPROVED AND ACTIVE tuitions
 // are visible to students (admin approves first, tutor can close later).
-router.get('/', async (req, res) => {
+router.get('/', ensureDatabase, async (req, res) => {
   const tuitions = await tuitionsCollection
     .find({ approvalStatus: 'approved', isActive: true })
     .toArray();
@@ -157,7 +158,7 @@ router.get('/', async (req, res) => {
 // GET /api/tuitions/latest - public: the 6 newest approved + active
 // tuitions, for the homepage "Featured Tuitions" section.
 // NOTE: must stay ABOVE /:id, otherwise "latest" is treated as an id.
-router.get('/latest', async (req, res) => {
+router.get('/latest', ensureDatabase, async (req, res) => {
   const tuitions = await tuitionsCollection
     .find({ approvalStatus: 'approved', isActive: true })
     .sort({ createdAt: -1 })
@@ -173,7 +174,7 @@ router.get('/latest', async (req, res) => {
 // GET /api/tuitions/:id - public: get ONE tuition for the details page.
 // Same rule as the list: students only ever see approved + active posts.
 // NOTE: defined after /mine and /all so those paths are not captured by :id.
-router.get('/:id', async (req, res) => {
+router.get('/:id', ensureDatabase, async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {
@@ -202,7 +203,7 @@ router.get('/:id', async (req, res) => {
 // Body: { approvalStatus: "pending" | "approved" | "rejected" }
 // Frontend uses it for Approve (approved), Reject (rejected) and
 // Reinstate (rejected -> approved).
-router.patch('/:id/status', verifyToken, requireRole('admin'), async (req, res) => {
+router.patch('/:id/status', verifyToken, requireRole('admin'), ensureDatabase, async (req, res) => {
   const { id } = req.params;
   const { approvalStatus } = req.body;
 
@@ -232,7 +233,7 @@ router.patch('/:id/status', verifyToken, requireRole('admin'), async (req, res) 
 });
 
 // PATCH /api/tuitions/:id - the owner tutor edits their own tuition post
-router.patch('/:id', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
+router.patch('/:id', verifyToken, requireRole('tutor', 'admin'), ensureDatabase, async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {
@@ -297,7 +298,7 @@ router.patch('/:id', verifyToken, requireRole('tutor', 'admin'), async (req, res
 });
 
 // DELETE /api/tuitions/:id - the owner tutor deletes their tuition post
-router.delete('/:id', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
+router.delete('/:id', verifyToken, requireRole('tutor', 'admin'), ensureDatabase, async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {

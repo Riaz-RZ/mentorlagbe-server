@@ -145,6 +145,25 @@ test('protects admin API routes while leaving health public', async () => {
 
   const health = await fetch(`${apiOrigin}/api/health`);
   assert.equal(health.status, 200);
+});
+
+test('initializes MongoDB before public data routes', async () => {
+  const originalDbUri = process.env.DB_URI;
+  delete process.env.DB_URI;
+
+  try {
+    const response = await fetch(`${apiOrigin}/api/tuitions`);
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.match(body.message, /DB_URI is missing/);
+  } finally {
+    if (originalDbUri !== undefined) {
+      process.env.DB_URI = originalDbUri;
+    } else {
+      delete process.env.DB_URI;
+    }
+  }
 
   const root = await fetch(`${apiOrigin}/`);
   assert.equal(root.status, 200);

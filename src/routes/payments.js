@@ -1,8 +1,13 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
-import { getDb, paymentsCollection } from '../config/db.js';
+import {
+  connectToMongoDB,
+  getDb,
+  paymentsCollection,
+} from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
+import { ensureDatabase } from '../middleware/ensureDatabase.js';
 import { verifyToken } from '../middleware/verifyToken.js';
 import { requireRole } from '../middleware/requireRole.js';
 
@@ -35,7 +40,7 @@ function getStripe() {
 
 // GET /api/payments - admin: full payment log, newest first.
 // Empty until the webhook starts writing to `payments`.
-router.get('/', verifyToken, requireRole('admin'), async (req, res) => {
+router.get('/', verifyToken, requireRole('admin'), ensureDatabase, async (req, res) => {
   const payments = await paymentsCollection
     .find()
     .sort({ paidAt: -1 })
@@ -121,6 +126,10 @@ export async function stripeWebhook(req, res) {
     event.type === 'checkout.session.completed' ? event.data.object : null;
 
   if (session && session.payment_status === 'paid') {
+    if (!getDb()) {
+      await connectToMongoDB();
+    }
+
     await recordPayment(session);
   }
 
@@ -181,7 +190,7 @@ async function recordPayment(session) {
 // polls this until the webhook lands. No Stripe call, no writes here,
 // so it can never create or change anything. This deliberately returns
 // only a boolean and remains public for the checkout return page.
-router.get('/status', async (req, res) => {
+router.get('/status', ensureDatabase, async (req, res) => {
   const { sessionId } = req.query;
 
   if (!sessionId || typeof sessionId !== 'string') {

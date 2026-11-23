@@ -4,6 +4,7 @@ import { applicationsCollection, tuitionsCollection } from '../config/db.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { ApiError } from '../utils/ApiError.js';
 import { getPlan } from '../utils/plan.js';
+import { ensureDatabase } from '../middleware/ensureDatabase.js';
 import { verifyToken } from '../middleware/verifyToken.js';
 import { requireRole } from '../middleware/requireRole.js';
 
@@ -24,7 +25,7 @@ const router = Router();
 
 // POST /api/applications - student applies to an approved tuition.
 // Identity and tuition snapshots are taken from trusted server data.
-router.post('/', verifyToken, requireRole('student'), async (req, res) => {
+router.post('/', verifyToken, requireRole('student'), ensureDatabase, async (req, res) => {
   const {
     tuitionId,
     studentPhone,
@@ -98,7 +99,7 @@ router.post('/', verifyToken, requireRole('student'), async (req, res) => {
 });
 
 // GET /api/applications/mine - the logged-in student's own applications.
-router.get('/mine', verifyToken, requireRole('student'), async (req, res) => {
+router.get('/mine', verifyToken, requireRole('student'), ensureDatabase, async (req, res) => {
   const applications = await applicationsCollection
     .find({ studentEmail: req.user.email })
     .sort({ appliedAt: -1 })
@@ -111,7 +112,7 @@ router.get('/mine', verifyToken, requireRole('student'), async (req, res) => {
 });
 
 // GET /api/applications/tutor - applications for the tutor's own tuition posts.
-router.get('/tutor', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
+router.get('/tutor', verifyToken, requireRole('tutor', 'admin'), ensureDatabase, async (req, res) => {
   let filter = {};
 
   if (req.user.role === 'tutor') {
@@ -144,7 +145,7 @@ router.get('/tutor', verifyToken, requireRole('tutor', 'admin'), async (req, res
 
 // PATCH /api/applications/:id/status - tutor accepts or rejects one
 // application. The student sees the new status on My Applications.
-router.patch('/:id/status', verifyToken, requireRole('tutor', 'admin'), async (req, res) => {
+router.patch('/:id/status', verifyToken, requireRole('tutor', 'admin'), ensureDatabase, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
