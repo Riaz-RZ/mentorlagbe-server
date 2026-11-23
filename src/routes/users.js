@@ -7,17 +7,17 @@ import { requireRole } from '../middleware/requireRole.js';
 
 const router = Router();
 
-// =============================================================
-// Users module — PLANNED endpoints (Phase 1, not implemented yet)
-//
-// GET   /api/users               -> admin: list all users
-// GET   /api/users/:email        -> self or admin: get a user
-// PATCH /api/users/profile       -> self: update own profile
-//                                   (name, phone, bio, image)
-// PATCH /api/users/:email/role   -> admin: change a user's role
-//
-// All endpoints will require verifyToken + requireRole middleware.
-// =============================================================
+export async function getPublicUserCounts(authUsers) {
+  const [students, tutors] = await Promise.all([
+    authUsers.countDocuments({ role: 'student', banned: { $ne: true } }),
+    authUsers.countDocuments({ role: 'tutor', banned: { $ne: true } }),
+  ]);
+
+  return { students, tutors };
+}
+
+// User-specific profile endpoints remain planned; when added, they must use
+// the verified identity from req.user.
 
 // Dashboard overview numbers for the admin page.
 router.get('/stats', verifyToken, requireRole('admin'), ensureDatabase, async (req, res, next) => {
@@ -52,6 +52,20 @@ router.get('/stats', verifyToken, requireRole('admin'), ensureDatabase, async (r
         pendingTuitions,
         totalRevenue: paid[0]?.total ?? 0,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public aggregate counts only; no personal user data is returned.
+router.get('/public-stats', ensureDatabase, async (_req, res, next) => {
+  try {
+    const counts = await getPublicUserCounts(getDb().collection('user'));
+
+    ApiResponse.success(res, {
+      message: 'public user counts retrieved successfully',
+      data: counts,
     });
   } catch (error) {
     next(error);

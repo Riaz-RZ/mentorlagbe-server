@@ -157,6 +157,11 @@ test('initializes MongoDB before public data routes', async () => {
 
     assert.equal(response.status, 500);
     assert.match(body.message, /DB_URI is missing/);
+
+    const publicStats = await fetch(`${apiOrigin}/api/users/public-stats`);
+    const statsBody = await publicStats.json();
+    assert.equal(publicStats.status, 500);
+    assert.match(statsBody.message, /DB_URI is missing/);
   } finally {
     if (originalDbUri !== undefined) {
       process.env.DB_URI = originalDbUri;
