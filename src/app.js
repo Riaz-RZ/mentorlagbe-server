@@ -31,6 +31,7 @@ app.post(
 app.use(express.json());
 
 // Basic API routes
+app.use('/', healthRoutes);
 app.use('/api/health', healthRoutes);
 
 // Route modules (mounted now, endpoints added in later phases)

@@ -145,4 +145,12 @@ test('protects admin API routes while leaving health public', async () => {
 
   const health = await fetch(`${apiOrigin}/api/health`);
   assert.equal(health.status, 200);
+
+  const root = await fetch(`${apiOrigin}/`);
+  assert.equal(root.status, 200);
+  assert.deepEqual(await root.json(), {
+    success: true,
+    message: 'MentorLagbe API is running',
+    data: { status: 'OK' },
+  });
 });
